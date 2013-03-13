@@ -235,11 +235,15 @@ checkCarry:
 	ret
 
 
-endOfNumber:
+endOfNumber:  ;now number is stored in answer, ah is length
+	mov cl, bl
+	and cl, 1
+	xor dh, dh
+	xor ch, ch
+	call increaseAns
 	int3
 	
 	section .data
 format 	db "%d", 0
 answer	times MAX_ANS_LENGTH db 0
 	end
-;if (dh == 0) && (ch != 0) ret
