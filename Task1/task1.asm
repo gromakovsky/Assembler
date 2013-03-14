@@ -1,6 +1,7 @@
 	%define BITS 128
 	%define MAX_NUMBER_LENGTH BITS/4
 	%define MAX_ANS_LENGTH 50
+	%define MAX_LENGTH 50
 	extern printf
 	section .text
 	global main
@@ -65,12 +66,14 @@ toNumber:
 	call setSign
 	xor dh, dh
 	mov dl, bl
-	and dl, 1
+	and dl, 2
+	shr dl, 1
 	add si, dx
 	call setMSB
 	mov esi, [edi + 8]  ;esi = argv[2]
 	mov dl, bl
-	and dl, 1
+	and dl, 2 
+	shr dl, 1
 	add si, dx
 	mov ah, 1
 	jmp processNumber
@@ -188,11 +191,11 @@ increaseAns:  ;answer+= cl
 	call checkCarry
 	je retLabel
 	cmp dh, 1     ;
-	je l          ; if (dh == 0) and (ch != 0) ret
+	je l1         ; if (dh == 0) and (ch != 0) ret
 	cmp ch, 0     ;
-	je l	      ;
+	je l1	      ;
 	jmp retLabel  ;
-l:	mov dl, [ebp]
+l1:	mov dl, [ebp]
 	add dl, cl
 	add dl, dh
 	xor dh, dh
@@ -236,14 +239,126 @@ checkCarry:
 
 
 endOfNumber:  ;now number is stored in answer, ah is length
+	;if msb, then answer++
 	mov cl, bl
 	and cl, 1
 	xor dh, dh
 	xor ch, ch
+	mov ebp, answer + MAX_ANS_LENGTH - 1
 	call increaseAns
-	int3
+	;convert 0 to '0', etc.
+	mov ch, ah
+	mov esi, answer + MAX_ANS_LENGTH - 1
+	call convertAns
+	;make MSB mean sign and sign mean nothing
+	mov dl, bl
+	and dl, 2
+	shr dl, 1
+	xor bl, dl
+	;count extra spaces/zeroes
+	mov al, bh
+	sub al, ah	
+	mov dl, bl
+	and dl, 00110000b
+	cmp dl, 0
+	call decAlNE  ;decrease, if ' '-flag or '+'-flag
+	mov dh, bl
+	and dh, 1
+	or dl, dh
+	cmp dl, 1  ;if dl == 1, decrease
+	call decAlE  ;decrease, if answer < 0 and not decreased yet
+	;push_forward '0' al times, if '0'-flag, also decreases al
+	mov bh, bl
+	and bh, 00000100b
+	cmp bh, 0
+	je l2
+	call push0
+l2:	;push -, if answer < 0
+	mov bh, bl
+	and bh, 1
+	cmp bh, 0
+	je l3
+	mov [esi], byte('-')
+	dec esi
+	jmp l5
+l3:	;here we know, that answer >= 0, need to look at ' '- and '+'-flag
+	mov bh, bl
+	and bh, 00010000b
+	cmp bh, 0
+	je l4
+	mov [esi], byte('+')
+	dec esi
+l4:	mov bh, bl
+	and bh, 00110000b
+	cmp bh, 00100000b
+	jne l5
+	mov [esi], byte(' ')
+	dec esi
+l5:	;
+	mov bh, bl
+	and bh, 00001000b
+	cmp bh, 0
+	je l6
+	mov edi, answer + MAX_ANS_LENGTH
+	call push_back
+	inc esi
+	push esi
+	call printf
+	add esp, 4
+	ret
+l6:	call push_forward
+	inc esi
+	push esi
+	call printf
+	add esp, 4
+	ret
+
+decAlNE:  ;decreases al, if not equal
+	je retLabel
+	dec al
+	ret
+
+decAlE:  ;decrease al, if equal
+	jne retLabel
+	dec al
+	ret
+
+push0:  ;push_forward '0' al times
+	cmp al, 1
+	jl retLabel
+	mov [esi], byte('0')
+	dec al
+	dec esi
+	jmp push0
+
+convertAns:
+	cmp ch, 0
+	je retLabel
+	mov cl, [esi]
+	add cl, '0'
+	mov [esi], cl
+	dec esi
+	dec ch
+	jmp convertAns
+
+push_forward:  ;pushes al spaces before answer(starts from esi)
+	cmp al, 1
+	jl retLabel
+	mov [esi], byte(' ')
+	dec al
+	dec esi
+	jmp push_forward
+
+push_back:  ;pushes al spaces after answer(starts from edi)
+	cmp al, 1
+	jl retLabel
+	mov [edi], byte(' ')
+	dec al
+	inc edi
+	jmp push_back
+
 	
 	section .data
-format 	db "%d", 0
-answer	times MAX_ANS_LENGTH db 0
+format 	db "%c", 0
+answer	times MAX_ANS_LENGTH + MAX_LENGTH db 0  ;+ MAX_LENGTH when flag '-'
 	end
