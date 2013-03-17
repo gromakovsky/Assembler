@@ -90,7 +90,7 @@ setSign:
 setMSB:
 	mov al, [esi]
 	call convert
-	cmp al, 10000000b
+	cmp al, 00001000b
 	jl retLabel
 	xor ah, ah
 	call countNumberLength
