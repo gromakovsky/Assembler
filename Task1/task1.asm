@@ -9,7 +9,7 @@
 main: 
 	mov edi, [esp + 8]  ;edi = argv
 	mov esi, [edi + 4]  ;esi = argv[1]
-	xor bl, bl  ;bl: ?? +-0sm //undefined, flags, sign, MSB
+	xor bl, bl  ;bl: ?! +-0sm //undefined, ans != 0, flags, sign, MSB
 	xor bh, bh  ;bh is length
 	jmp processFormat 
 		
@@ -186,7 +186,10 @@ convert:  ;to convert from 'A' to 10 in al
 	ret
 
 
-increaseAns:  ;answer+= cl
+increaseAns:  ;answer+= cl, changes !-bit in bl
+	shl cl, 6
+	or bl, cl
+	shr cl, 6
 	cmp ch, ah
 	call checkCarry
 	je retLabel
@@ -255,6 +258,11 @@ endOfNumber:  ;now number is stored in answer, ah is length
 	and dl, 2
 	shr dl, 1
 	xor bl, dl
+	mov dl, 10111111b
+	or dl, bl
+	and dl, 01000000b
+	sar dl, 6
+	and bl, dl
 	;count extra spaces/zeroes
 	mov al, bh
 	sub al, ah	
