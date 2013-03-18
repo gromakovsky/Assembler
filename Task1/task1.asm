@@ -260,8 +260,7 @@ endOfNumber:  ;now number is stored in answer, ah is length
 	xor bl, dl
 	mov dl, 10111111b
 	or dl, bl
-	and dl, 01000000b
-	sar dl, 6
+	ror dl, 6
 	and bl, dl
 	;count extra spaces/zeroes
 	mov al, bh
