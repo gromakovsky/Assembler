@@ -1,1 +1,0 @@
-yasm -f elf32 -g dwarf2 -o Factorial.o Factorial.asm & gcc -m32 -o factorial Factorial.o  

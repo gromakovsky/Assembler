@@ -27,6 +27,5 @@ print:
 	add esp, 8
 		
 		section .rodata
-format 	db "%d", 0
-text	db "Hello", 0
+format 	db "Result is %d", 10, 13, 0
 	end
