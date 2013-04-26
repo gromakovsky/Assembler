@@ -1,5 +1,8 @@
-%define MATRIX_SIZE 4 * 1
+%define MATRIX_HEIGHT 1
+%define MATRIX_WIDTH 1
+%define MATRIX_SIZE 4 * MATRIX_HEIGHT * MATRIX_WIDTH
 %define NUMBER_OF_MATRIXES 2
+%define OUTPUT_SIZE NUMBER_OF_MATRIXES * MATRIX_HEIGHT * MATRIX_WIDTH
 extern printf
 extern exit
 
@@ -9,13 +12,13 @@ section .rodata
 formatDouble db "%lf ", 0
 formatInt db "%d", 10, 0
 input dd 1.0, 2.1, 2.1, 2.1, 2.1
-two dd 2.0
+two dd 2.
 half dd 0.5
-four dd 4.0
+four dd 4.
 
 
 section .data
-output resd 64
+output resd OUTPUT_SIZE
 sqrt2 resd 1
 
 section .text
@@ -23,13 +26,13 @@ section .text
 ret_label:
     ret
 
-_countSqrt2@0:
+_countSqrt2@0: ; stores sqrt(2.) in sqrt2
     fld dword[two]    
     fsqrt
     fstp dword[sqrt2]
     ret
 
-_alpha@4:
+_alpha@4: ; arg == 0 ? sqrt(2) / 4 : 0.5
     push ebp
     mov ebp, esp
     mov eax, [esp + 8]
@@ -97,6 +100,13 @@ _fdctSingle@8:  ; doesn't affect ecx
     ret 8
 
 _idct@12:
+    ;frame pointer
+    push ebp
+    mov ebp, esp
+    ;
+
+
+    leave
     ret 12
 
 main:
@@ -106,16 +116,6 @@ main:
     ;
 
     call _countSqrt2@0
-
-    ;test
-    push 0
-    call _alpha@4
-    sub esp, 8
-    fstp qword[esp]
-    push formatDouble
-;    call printf
-    add esp, 12
-    ;
 
     push NUMBER_OF_MATRIXES
     push output
