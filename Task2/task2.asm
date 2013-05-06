@@ -2,14 +2,72 @@
 %define MATRIX_WIDTH 8
 %define MATRIX_SIZE MATRIX_HEIGHT * MATRIX_WIDTH
 
+%macro matrixMultInternal 3 ; %1 - esi, %2 - c^T, %3 - edi
+        movaps xmm0, [%1 + ecx * 4] ; xmm0 = esi[0, ecx]
+        add ecx, MATRIX_WIDTH / 2
+        movaps xmm1, [%1 + ecx * 4] ; xmm1 = esi[4, ecx]
+        mulps xmm0, [%2 + eax * 4] ;xmm0 *= transformMatrix[0, eax]
+        add eax, MATRIX_WIDTH / 2
+        mulps xmm1, [%2 + eax * 4] ;xmm1 *= transformMatrix[4, eax]
+        haddps xmm0, xmm1
+        haddps xmm0, xmm0
+        haddps xmm0, xmm0 ; xmm0 = sum
+
+        movss dword [%3], xmm0 ;edi = sum, tmp[eax, ecx] = esi[ecx] * transformMatrix[eax]
+        add %3, 4
+        add ecx, MATRIX_WIDTH / 2
+        sub eax, MATRIX_WIDTH / 2
+%endmacro
+
+%macro matrixMultExternal 3
+    xor ecx, ecx
+%rep MATRIX_WIDTH
+    matrixMultInternal %1, %2, %3
+%endrep
+    add eax, MATRIX_WIDTH
+%endmacro
+
+%macro matrixMult 3
+;    xor eax, eax
+;%rep MATRIX_WIDTH
+;    matrixMultExternal %1, %2, %3
+;%endrep
+
+    xor eax, eax
+  fdctSingle_loop1: ; (esi * c^T)^T -> edi (esp)
+    xor ecx, ecx
+      fdctSingle_loop2:
+        lea edx, [ecx * MATRIX_WIDTH]
+        movaps xmm0, [%1 + edx * 4]
+        add edx, 4
+        movaps xmm1, [%1 + edx * 4]
+        lea edx, [eax * MATRIX_WIDTH]
+        mulps xmm0, [%2 + edx * 4]
+        add edx, 4
+        mulps xmm1, [%2 + edx * 4]
+        haddps xmm0, xmm1
+        haddps xmm0, xmm0
+        haddps xmm0, xmm0
+
+        movss dword [%3], xmm0
+        add %3, 4
+        inc ecx
+        cmp ecx, MATRIX_WIDTH
+        jne fdctSingle_loop2
+    inc eax
+    cmp eax, MATRIX_HEIGHT
+    jne fdctSingle_loop1
+        
+%endmacro
+
 global _fdct
 global _idct
 
 section .bss
-align 16
+;align 16
 transformMatrix resd MATRIX_SIZE
 transformMatrixT resd MATRIX_SIZE
-transformMatrixCalculated db 0
+;transformMatrixCalculated db 0
 sqrt132 resd 1 ; sqrt132 = sqrt(1/32)
 
 section .text
@@ -61,32 +119,36 @@ _fdctSingle: ; void _fdctSingle(float * input, float * output)
     mov edi, esp
     mov esi, [ebp + 16]
 
-    prefetcht0 [transformMatrix]
+;    prefetcht0 [transformMatrix]
+
+;    matrixMult esi, transformMatrix, edi
 
     xor eax, eax
   fdctSingle_loop1: ; (esi * c^T)^T -> edi (esp)
     xor ecx, ecx
       fdctSingle_loop2:
         lea edx, [ecx * MATRIX_WIDTH]
-        movaps xmm0, [esi + edx * 4] ; xmm0 = esi[0, ecx]
+        movaps xmm0, [esi + edx * 4]
         add edx, 4
-        movaps xmm1, [esi + edx * 4] ; xmm1 = esi[4, ecx]
+        movaps xmm1, [esi + edx * 4]
         lea edx, [eax * MATRIX_WIDTH]
-        mulps xmm0, [transformMatrix + edx * 4] ;xmm0 *= transformMatrix[0, eax]
+        mulps xmm0, [transformMatrix + edx * 4]
         add edx, 4
-        mulps xmm1, [transformMatrix + edx * 4] ;xmm1 *= transformMatrix[4, eax]
+        mulps xmm1, [transformMatrix + edx * 4]
         haddps xmm0, xmm1
         haddps xmm0, xmm0
-        haddps xmm0, xmm0 ; xmm0 = sum
+        haddps xmm0, xmm0
 
-        movss dword [edi], xmm0 ;edi = sum, tmp[eax, ecx] = esi[ecx] * transformMatrix[eax]
+        movss dword [edi], xmm0
         add edi, 4
         inc ecx
         cmp ecx, MATRIX_WIDTH
-      jne fdctSingle_loop2
+        jne fdctSingle_loop2
     inc eax
     cmp eax, MATRIX_HEIGHT
-  jne fdctSingle_loop1
+    jne fdctSingle_loop1
+        
+;    jmp exit
         
     mov edi, [ebp + 20]
     mov esi, transformMatrix
@@ -116,6 +178,7 @@ _fdctSingle: ; void _fdctSingle(float * input, float * output)
     cmp eax, MATRIX_HEIGHT
   jne fdctSingle_loop3
 
+exit:
     leave
     pop esi
     pop edi
@@ -237,12 +300,12 @@ _calculateSqrt132: ; stores sqrt(1/32) in sqrt132
     ret
 
 _calculateTransformMatrix: ;calculates transformMatrix and transformMatrixT
-    mov eax, [transformMatrixCalculated]
+    movzx eax, byte [transformMatrixCalculated]
     test eax, eax
     jz calculateTransformMatrix_calc
     ret
 
-  calculateTransformMatrix_calc
+  calculateTransformMatrix_calc:
     mov eax, 1
     mov [transformMatrixCalculated], eax
     xor eax, eax
