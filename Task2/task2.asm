@@ -6,8 +6,10 @@ global _fdct
 global _idct
 
 section .bss
+align 16
 transformMatrix resd MATRIX_SIZE
 transformMatrixT resd MATRIX_SIZE
+transformMatrixCalculated db 0
 sqrt132 resd 1 ; sqrt132 = sqrt(1/32)
 
 section .text
@@ -37,7 +39,7 @@ _fdct: ; void _fdct(float * input, float * output, unsigned int n)
     add edi, MATRIX_SIZE * 4
     add esi, MATRIX_SIZE * 4
     dec ebx
-    jnz fdct_loop
+  jnz fdct_loop
 
     pop ebx
     pop esi
@@ -54,35 +56,37 @@ _fdctSingle: ; void _fdctSingle(float * input, float * output)
     ;
 
     and esp, -16 ; align stack
-    sub esp, MATRIX_SIZE * 4
+    sub esp, MATRIX_SIZE * 4 ; to put temporary matrix here
 
     mov edi, esp
     mov esi, [ebp + 16]
+
+    prefetcht0 [transformMatrix]
 
     xor eax, eax
   fdctSingle_loop1: ; (esi * c^T)^T -> edi (esp)
     xor ecx, ecx
       fdctSingle_loop2:
         lea edx, [ecx * MATRIX_WIDTH]
-        movaps xmm0, [esi + edx * 4]
+        movaps xmm0, [esi + edx * 4] ; xmm0 = esi[0, ecx]
         add edx, 4
-        movaps xmm1, [esi + edx * 4]
+        movaps xmm1, [esi + edx * 4] ; xmm1 = esi[4, ecx]
         lea edx, [eax * MATRIX_WIDTH]
-        mulps xmm0, [transformMatrix + edx * 4] 
+        mulps xmm0, [transformMatrix + edx * 4] ;xmm0 *= transformMatrix[0, eax]
         add edx, 4
-        mulps xmm1, [transformMatrix + edx * 4] 
+        mulps xmm1, [transformMatrix + edx * 4] ;xmm1 *= transformMatrix[4, eax]
         haddps xmm0, xmm1
         haddps xmm0, xmm0
-        haddps xmm0, xmm0
+        haddps xmm0, xmm0 ; xmm0 = sum
 
-        movss dword [edi], xmm0
+        movss dword [edi], xmm0 ;edi = sum, tmp[eax, ecx] = esi[ecx] * transformMatrix[eax]
         add edi, 4
         inc ecx
         cmp ecx, MATRIX_WIDTH
-        jne fdctSingle_loop2
+      jne fdctSingle_loop2
     inc eax
     cmp eax, MATRIX_HEIGHT
-    jne fdctSingle_loop1
+  jne fdctSingle_loop1
         
     mov edi, [ebp + 20]
     mov esi, transformMatrix
@@ -107,10 +111,10 @@ _fdctSingle: ; void _fdctSingle(float * input, float * output)
         inc ecx
         add edi, 4
         cmp ecx, MATRIX_WIDTH
-        jne fdctSingle_loop4
+      jne fdctSingle_loop4
     inc eax
     cmp eax, MATRIX_HEIGHT
-    jne fdctSingle_loop3
+  jne fdctSingle_loop3
 
     leave
     pop esi
@@ -233,6 +237,14 @@ _calculateSqrt132: ; stores sqrt(1/32) in sqrt132
     ret
 
 _calculateTransformMatrix: ;calculates transformMatrix and transformMatrixT
+    mov eax, [transformMatrixCalculated]
+    test eax, eax
+    jz calculateTransformMatrix_calc
+    ret
+
+  calculateTransformMatrix_calc
+    mov eax, 1
+    mov [transformMatrixCalculated], eax
     xor eax, eax
     
   calculateTransformMatrix_loop1:
@@ -253,7 +265,7 @@ _calculateTransformMatrix: ;calculates transformMatrix and transformMatrixT
     
 _calculateTransformMatrixSingle: ; void _calculateTransformMatrixSingle(size_t i, size_t j)
                                 ; transformMatrix[i, j] = i == 0 ? 1/8 : 1/sqrt(32) * cos((2 * j + 1) * i * pi / 16)
-                                ; transformMatrixT = transformMatrix^T * 8 (just magic)
+                                ; transformMatrixT = transformMatrix^T * 8 in this case transformMatrixT is matrix for idct
                                 ; args: eax = i, ecx = j
     ;frame pointer
     push ebp
