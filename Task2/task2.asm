@@ -2,21 +2,18 @@
 %define MATRIX_WIDTH 8
 %define MATRIX_SIZE MATRIX_HEIGHT * MATRIX_WIDTH
 
-%macro matrixMultInternal 3 ; %1 - esi, %2 - c^T, %3 - edi
-        movaps xmm0, [%1 + ecx * 4] ; xmm0 = esi[0, ecx]
-        add ecx, MATRIX_WIDTH / 2
-        movaps xmm1, [%1 + ecx * 4] ; xmm1 = esi[4, ecx]
+%macro matrixMultInternal 3 ; %1 esi, %2 c^T, %3 edi
+        movaps xmm0, [%1 + ecx * 4] ; xmm0 = %1[0, ecx]
+        movaps xmm1, [%1 + MATRIX_WIDTH / 2 * 4 + ecx * 4] ; xmm1 = esi[4, ecx]
         mulps xmm0, [%2 + eax * 4] ;xmm0 *= transformMatrix[0, eax]
-        add eax, MATRIX_WIDTH / 2
-        mulps xmm1, [%2 + eax * 4] ;xmm1 *= transformMatrix[4, eax]
+        mulps xmm1, [%2 + MATRIX_WIDTH / 2 * 4 + eax * 4] ;xmm1 *= transformMatrix[4, eax]
         haddps xmm0, xmm1
         haddps xmm0, xmm0
         haddps xmm0, xmm0 ; xmm0 = sum
 
         movss dword [%3], xmm0 ;edi = sum, tmp[eax, ecx] = esi[ecx] * transformMatrix[eax]
         add %3, 4
-        add ecx, MATRIX_WIDTH / 2
-        sub eax, MATRIX_WIDTH / 2
+        add ecx, MATRIX_WIDTH
 %endmacro
 
 %macro matrixMultExternal 3
@@ -28,36 +25,39 @@
 %endmacro
 
 %macro matrixMult 3
-;    xor eax, eax
-;%rep MATRIX_WIDTH
-;    matrixMultExternal %1, %2, %3
-;%endrep
-
     xor eax, eax
-  fdctSingle_loop1: ; (esi * c^T)^T -> edi (esp)
-    xor ecx, ecx
-      fdctSingle_loop2:
-        lea edx, [ecx * MATRIX_WIDTH]
-        movaps xmm0, [%1 + edx * 4]
-        add edx, 4
-        movaps xmm1, [%1 + edx * 4]
-        lea edx, [eax * MATRIX_WIDTH]
-        mulps xmm0, [%2 + edx * 4]
-        add edx, 4
-        mulps xmm1, [%2 + edx * 4]
+%rep MATRIX_WIDTH
+    matrixMultExternal %1, %2, %3
+%endrep
+%endmacro
+
+%macro matrixMultInternal2 3 ; %1 esi, %2 c^T, %3 edi
+        movaps xmm0, [%1 + eax * 4] ; xmm0 = esi[0, ecx]
+        movaps xmm1, [%1 + MATRIX_WIDTH / 2 * 4 + ecx * 4] ; xmm1 = esi[4, ecx]
+        mulps xmm0, [%2 + ecx * 4] ;xmm0 *= transformMatrix[0, eax]
+        mulps xmm1, [%2 + MATRIX_WIDTH / 2 * 4 + eax * 4] ;xmm1 *= transformMatrix[4, eax]
         haddps xmm0, xmm1
         haddps xmm0, xmm0
-        haddps xmm0, xmm0
+        haddps xmm0, xmm0 ; xmm0 = sum
 
-        movss dword [%3], xmm0
+        movss dword [%3], xmm0 ;edi = sum, tmp[eax, ecx] = esi[ecx] * transformMatrix[eax]
         add %3, 4
-        inc ecx
-        cmp ecx, MATRIX_WIDTH
-        jne fdctSingle_loop2
-    inc eax
-    cmp eax, MATRIX_HEIGHT
-    jne fdctSingle_loop1
-        
+        add ecx, MATRIX_WIDTH
+%endmacro
+
+%macro matrixMultExternal2 3
+    xor ecx, ecx
+%rep MATRIX_WIDTH
+    matrixMultInternal2 %1, %2, %3
+%endrep
+    add eax, MATRIX_WIDTH
+%endmacro
+
+%macro matrixMult2 3
+    xor eax, eax
+%rep MATRIX_WIDTH
+    matrixMultExternal2 %1, %2, %3
+%endrep
 %endmacro
 
 global _fdct
@@ -67,7 +67,7 @@ section .bss
 ;align 16
 transformMatrix resd MATRIX_SIZE
 transformMatrixT resd MATRIX_SIZE
-;transformMatrixCalculated db 0
+transformMatrixCalculated db 0
 sqrt132 resd 1 ; sqrt132 = sqrt(1/32)
 
 section .text
@@ -121,64 +121,13 @@ _fdctSingle: ; void _fdctSingle(float * input, float * output)
 
 ;    prefetcht0 [transformMatrix]
 
-;    matrixMult esi, transformMatrix, edi
-
-    xor eax, eax
-  fdctSingle_loop1: ; (esi * c^T)^T -> edi (esp)
-    xor ecx, ecx
-      fdctSingle_loop2:
-        lea edx, [ecx * MATRIX_WIDTH]
-        movaps xmm0, [esi + edx * 4]
-        add edx, 4
-        movaps xmm1, [esi + edx * 4]
-        lea edx, [eax * MATRIX_WIDTH]
-        mulps xmm0, [transformMatrix + edx * 4]
-        add edx, 4
-        mulps xmm1, [transformMatrix + edx * 4]
-        haddps xmm0, xmm1
-        haddps xmm0, xmm0
-        haddps xmm0, xmm0
-
-        movss dword [edi], xmm0
-        add edi, 4
-        inc ecx
-        cmp ecx, MATRIX_WIDTH
-        jne fdctSingle_loop2
-    inc eax
-    cmp eax, MATRIX_HEIGHT
-    jne fdctSingle_loop1
-        
-;    jmp exit
+    matrixMult esi, transformMatrix, edi
         
     mov edi, [ebp + 20]
     mov esi, transformMatrix
 
-    xor eax, eax
-  fdctSingle_loop3: ; (c * (edi * c^T (from esp))) -> edi (output)
-    xor ecx, ecx
-      fdctSingle_loop4:
-        lea edx, [eax * MATRIX_WIDTH]
-        movaps xmm0, [esi + edx * 4]
-        add edx, 4
-        movaps xmm1, [esi + edx * 4]
-        lea edx, [ecx * MATRIX_WIDTH]
-        mulps xmm0, [esp + edx * 4] 
-        add edx, 4
-        mulps xmm1, [esp + edx * 4] 
-        haddps xmm0, xmm1
-        haddps xmm0, xmm0
-        haddps xmm0, xmm0
+    matrixMult2 esi, esp, edi
 
-        movss dword [edi], xmm0
-        inc ecx
-        add edi, 4
-        cmp ecx, MATRIX_WIDTH
-      jne fdctSingle_loop4
-    inc eax
-    cmp eax, MATRIX_HEIGHT
-  jne fdctSingle_loop3
-
-exit:
     leave
     pop esi
     pop edi
@@ -231,58 +180,12 @@ _idctSingle: ; void _idctSingle(float * input, float * output)
     mov edi, esp
     mov esi, [ebp + 16]
 
-    xor eax, eax
-  idctSingle_loop1: ; (esi * c)^T -> edi (esp)
-    xor ecx, ecx
-      idctSingle_loop2:
-        lea edx, [ecx * MATRIX_WIDTH]
-        movaps xmm0, [esi + edx * 4]
-        add edx, 4
-        movaps xmm1, [esi + edx * 4]
-        lea edx, [eax * MATRIX_WIDTH]
-        mulps xmm0, [transformMatrixT + edx * 4] 
-        add edx, 4
-        mulps xmm1, [transformMatrixT + edx * 4] 
-        haddps xmm0, xmm1
-        haddps xmm0, xmm0
-        haddps xmm0, xmm0
-
-        movss dword [edi], xmm0
-        add edi, 4
-        inc ecx
-        cmp ecx, MATRIX_WIDTH
-        jne idctSingle_loop2
-    inc eax
-    cmp eax, MATRIX_HEIGHT
-    jne idctSingle_loop1
+    matrixMult esi, transformMatrixT, edi
         
     mov edi, [ebp + 20]
     mov esi, transformMatrixT
 
-    xor eax, eax
-  idctSingle_loop3: ; (c^T * (esi * c)) -> edi (output)
-    xor ecx, ecx
-      idctSingle_loop4:
-        lea edx, [eax * MATRIX_WIDTH]
-        movaps xmm0, [esi + edx * 4]
-        add edx, 4
-        movaps xmm1, [esi + edx * 4]
-        lea edx, [ecx * MATRIX_WIDTH]
-        mulps xmm0, [esp + edx * 4] 
-        add edx, 4
-        mulps xmm1, [esp + edx * 4] 
-        haddps xmm0, xmm1
-        haddps xmm0, xmm0
-        haddps xmm0, xmm0
-
-        movss dword [edi], xmm0
-        add edi, 4
-        inc ecx
-        cmp ecx, MATRIX_WIDTH
-        jne idctSingle_loop4
-    inc eax
-    cmp eax, MATRIX_HEIGHT
-    jne idctSingle_loop3
+    matrixMult2 esi, esp, edi
 
     leave
     pop esi
@@ -306,8 +209,8 @@ _calculateTransformMatrix: ;calculates transformMatrix and transformMatrixT
     ret
 
   calculateTransformMatrix_calc:
-    mov eax, 1
-    mov [transformMatrixCalculated], eax
+;    mov eax, 1
+;    mov [transformMatrixCalculated], eax
     xor eax, eax
     
   calculateTransformMatrix_loop1:
