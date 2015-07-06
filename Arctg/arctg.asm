@@ -22,20 +22,20 @@ arctg:
 
 aloop:
 	fxch st0, st1
-		fadd st0, st3
+		fadd st0, st3 ;st1 += 2
 	fxch st0, st1
 
 	fxch st0, st2
-		fmul st0, st4
-		fmul st0, st4
-		fmul st0, st5
+		fmul st0, st4 ;st4 *= x
+		fmul st0, st4 ;st4 *= x
+		fmul st0, st5 ;st4 *= -1
 	fxch st0, st2
 
-	fld st2
-	fdiv st0, st2
-	fxch st0, st7
-	fstp st0	
-	fadd st0, st6
+	fld st2           ;count current summand in st0
+	fdiv st0, st2     ;st0 /= (2i + 1)
+	fxch st0, st7     ;current summand = st0
+	fstp st0	      ;
+	fadd st0, st6     ;current result += current answer
 		
 	dec ecx
 	jnz aloop
